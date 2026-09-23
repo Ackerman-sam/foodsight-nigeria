@@ -1,0 +1,10 @@
+commodity,pre_mean_pct_change,post_mean_pct_change,pre_std,post_std,welch_t_stat,p_value,significant_at_5pct
+Rice_local,1.47,3.57,3.93,5.48,-2.107,0.04,True
+Rice_imported,1.43,3.01,3.54,5.05,-1.734,0.0889,False
+Gari_white,1.34,2.56,6.02,8.53,-0.787,0.4351,False
+Beans_brown,1.18,2.65,3.86,10.74,-0.814,0.4204,False
+Palm_oil,1.55,2.23,3.42,4.13,-0.88,0.3822,False
+Groundnut_oil,1.63,2.43,4.52,4.01,-0.976,0.3321,False
+Vegetable_oil,1.6,2.74,2.58,4.4,-1.474,0.1473,False
+Yam,1.51,5.04,6.89,10.32,-1.905,0.0625,False
+Maize_white,1.74,2.71,6.26,9.19,-0.582,0.5631,False
