@@ -57,8 +57,7 @@ pre-subsidy values are retained and displayed for historical reference.
 - **National level only.** No state/zone breakdown, consistent with the project's documented
   scope decision.
 - **Usability evaluation** (getting real non-technical users to test this) has not been
-  conducted — the objective's *build* half is complete, the *evaluation* half is not, and
-  should be flagged honestly in Chapter 4/5 rather than implied.
+  conducted.
 
 ## Tested with
 
