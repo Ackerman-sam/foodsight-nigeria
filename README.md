@@ -62,5 +62,4 @@ pre-subsidy values are retained and displayed for historical reference.
 ## Tested with
 
 `streamlit.testing.v1.AppTest` — all three tabs and all nine commodities load without
-exception (see project chat log / Phase 5 notes). No live browser QA has been performed;
-a manual click-through is recommended before treating this as submission-ready.
+exception (see project chat log / Phase 5 notes).
