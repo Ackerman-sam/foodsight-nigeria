@@ -38,11 +38,12 @@ COMMODITY_LABELS = {
     "Maize_white": "Maize (White)",
 }
 CATEGORIES = {
-    "Rice_local": "Staples", "Rice_imported": "Staples",
-    "Gari_white": "Staples", "Yam": "Staples", "Maize_white": "Staples",
+    "Rice_local": "Grains", "Rice_imported": "Grains", "Maize_white": "Grains",
+    "Gari_white": "Tubers", "Yam": "Tubers",
     "Beans_brown": "Legumes",
     "Palm_oil": "Oils", "Groundnut_oil": "Oils", "Vegetable_oil": "Oils",
 }
+CATEGORY_ORDER = ["Grains", "Tubers", "Legumes", "Oils"]
 UNIT_LABELS = {"Palm_oil": "NGN / litre", "Groundnut_oil": "NGN / litre", "Vegetable_oil": "NGN / litre"}
 DRIVER_LABELS = {
     "own_price_lags": "Recent price momentum",
@@ -74,14 +75,16 @@ STATUS = {  # key -> (label, colour, plain-language description)
 
 def _icon(path):
     svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='" + path +
-           "' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' "
+           "' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' "
            "stroke-linejoin='round'/></svg>")
     return 'url("data:image/svg+xml,' + svg.replace("<", "%3C").replace(">", "%3E") + '")'
 
 
-# Sidebar toggle icons (swap the path data to restyle): chevron to close, menu to open.
-ICON_COLLAPSE = _icon("M15 5l-7 7 7 7")
-ICON_EXPAND = _icon("M4 7h16M4 12h16M4 17h16")
+# Sidebar toggle icon (swap the path data to restyle): a "sidebar panel" glyph
+# (rounded square with a divider near the left edge), used for both open and closed states.
+PANEL_ICON = _icon("M6.5 4h11A3.5 3.5 0 0 1 21 7.5v9a3.5 3.5 0 0 1-3.5 3.5h-11A3.5 3.5 0 0 1 3 16.5v-9A3.5 3.5 0 0 1 6.5 4z M9.5 4v16")
+ICON_COLLAPSE = PANEL_ICON
+ICON_EXPAND = PANEL_ICON
 
 st.markdown(
     f"""
@@ -182,7 +185,7 @@ except FileNotFoundError as e:
     DATA_OK = False
     MISSING_FILE = str(e)
 
-COMMODITIES = list(COMMODITY_LABELS.keys())
+COMMODITIES = sorted(COMMODITY_LABELS, key=lambda c: CATEGORY_ORDER.index(CATEGORIES[c]))  # grouped by category
 
 
 # ---------------------------------------------------------------------------
