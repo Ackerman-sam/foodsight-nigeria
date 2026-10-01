@@ -213,11 +213,10 @@ if not DATA_OK:
     )
     st.stop()
 
+selected_category = st.sidebar.selectbox("Category", CATEGORY_ORDER, key="category")
+_options = [c for c in COMMODITIES if CATEGORIES[c] == selected_category]
 selected = st.sidebar.selectbox(
-    "Commodity",
-    COMMODITIES,
-    key="commodity",
-    format_func=lambda c: f"{COMMODITY_LABELS[c]}  ·  {CATEGORIES[c]}",
+    "Commodity", _options, key="commodity", format_func=lambda c: COMMODITY_LABELS[c],
 )
 page = st.sidebar.radio("View", PAGES, key="page")
 st.sidebar.markdown("---")
