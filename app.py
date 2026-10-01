@@ -50,6 +50,7 @@ DRIVER_LABELS = {
     "rainfall_anomaly": "Rainfall anomaly",
     "post_subsidy_removal": "Post-subsidy period",
 }
+PLOT_CFG = {"displayModeBar": False}  # hide Plotly toolbar
 PAGES = ["Overview", "Forecast", "Drivers", "Price Status", "Methodology"]
 
 # ---------------------------------------------------------------------------
@@ -71,10 +72,16 @@ st.markdown(
     f"""
 <style>
   .block-container {{ padding-top: 2rem; max-width: 1400px; }}
-  .fs-eyebrow {{ color:{C['muted']}; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; margin:0; }}
+  /* Hide Streamlit framework chrome (Fork / GitHub / menu / footer); keep sidebar toggle */
+  [data-testid="stToolbar"], [data-testid="stAppDeployButton"], .stDeployButton,
+  #MainMenu, footer {{ visibility:hidden; height:0; }}
+  .fs-eyebrow {{ color:{C['muted']}; font-size:.85rem; letter-spacing:.01em; margin:0; }}
+  .fs-footer {{ border-top:1px solid {C['border']}; margin-top:3rem; padding-top:.8rem;
+                color:{C['muted']}; opacity:.7; font-size:.72rem; }}
   .fs-title {{ font-size:2rem; font-weight:700; margin:.1rem 0 1rem 0; line-height:1.15; }}
   .fs-card {{ background:{C['surface']}; border:1px solid {C['border']}; border-radius:10px;
-              padding:1rem 1.1rem; height:100%; }}
+              padding:1rem 1.1rem; height:100%; min-height:7.6rem;
+              display:flex; flex-direction:column; justify-content:flex-start; }}
   .fs-label {{ color:{C['muted']}; font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; margin:0; }}
   .fs-value {{ font-size:1.9rem; font-weight:700; line-height:1.2; margin:.25rem 0 .1rem 0; }}
   .fs-value.sm {{ font-size:1.5rem; }}
@@ -136,13 +143,17 @@ selected = st.sidebar.selectbox(
     COMMODITIES,
     key="commodity",
     format_func=lambda c: f"{COMMODITY_LABELS[c]}  ·  {CATEGORIES[c]}",
-    help="Click and type to search.",
 )
 page = st.sidebar.radio("View", PAGES, key="page")
 st.sidebar.markdown("---")
-st.sidebar.caption(
-    "Data: NBS, CHIRPS, Investing.com · National level, monthly, "
-    "Jan 2016 – " + merged["date"].iloc[-1].strftime("%b %Y")
+st.sidebar.markdown(
+    f"<div style='font-size:.8rem;line-height:1.6;color:{C['muted']}'>"
+    f"<b style='color:{C['text']}'>Last updated</b><br>{merged['date'].iloc[-1].strftime('%B %Y')} data<br>"
+    f"<b style='color:{C['text']}'>Coverage</b><br>National · monthly · Jan 2016 – "
+    f"{merged['date'].iloc[-1].strftime('%b %Y')}<br>"
+    f"<b style='color:{C['text']}'>Sources</b><br>NBS (prices, CPI, fuel), CHIRPS (rainfall), "
+    f"Investing.com (exchange rate)</div>",
+    unsafe_allow_html=True,
 )
 
 
@@ -218,12 +229,17 @@ def kpi_row():
     c1.markdown(kpi_card("Current price", naira(latest_price, 2),
                          f"{unit} · {latest_date.strftime('%B %Y')}"), unsafe_allow_html=True)
     c2.markdown(kpi_card("6-month outlook", f"{outlook_arrow} {outlook_pct:+.1f}%",
-                         f"{outlook_word} · {naira(end_fc['forecast'])} by {end_fc['date'].strftime('%b %Y')}",
+                         f"{outlook_word} to {naira(end_fc['forecast'])} by {end_fc['date'].strftime('%b %Y')}",
                          outlook_color), unsafe_allow_html=True)
     c3.markdown(kpi_card("Price status", status_label,
-                         f"Vs. recent 24-month range", status_color), unsafe_allow_html=True)
-    c4.markdown(kpi_card("Forecast accuracy", f"{best_mape:.2f}% avg. error",
-                         f"1-month-ahead · {best_model}", small=True), unsafe_allow_html=True)
+                         "Vs. recent 24-month range", status_color), unsafe_allow_html=True)
+    c4.markdown(kpi_card("Forecast accuracy", f"{best_mape:.2f}%",
+                         f"Average error · 1-month-ahead · {best_model}"), unsafe_allow_html=True)
+
+
+def range_note():
+    st.caption("Shaded band = 80% range ⓘ", help="The model expects the actual price to land inside the "
+               "band about 8 times out of 10. Everything right of the dotted line is a forecast.")
 
 
 def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False):
@@ -250,16 +266,21 @@ def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False
                              hovertemplate="₦%{y:,.0f}<extra>Forecast</extra>"))
 
     if show_thresholds:
-        for val, col, nm in [(amber, C["amber"], "Watch threshold"), (red, C["red"], "High threshold")]:
-            fig.add_hline(y=val, line_dash="dot", line_color=col, opacity=0.8,
-                          annotation_text=nm, annotation_position="top left",
-                          annotation_font_color=col)
+        # High label sits above its line, Watch label below its line, both at the right edge,
+        # so the two labels cannot collide even when the thresholds are close together.
+        for val, col, nm, anchor in [(red, C["red"], "High", "bottom"), (amber, C["amber"], "Watch", "top")]:
+            fig.add_hline(y=val, line_dash="dot", line_color=col, opacity=0.8)
+            fig.add_annotation(x=1, xref="paper", y=val, xanchor="right", yanchor=anchor,
+                               text=f"<b>{nm}</b> {naira(val)}", showarrow=False,
+                               font=dict(size=11, color=col))
 
     # Forecast boundary (always shown, explicitly labelled)
     fig.add_shape(type="line", x0=latest_date, x1=latest_date, y0=0, y1=1, yref="paper",
                   line=dict(color=C["muted"], width=1, dash="dot"))
-    fig.add_annotation(x=latest_date, y=1, yref="paper", text="Forecast starts →", showarrow=False,
-                       xanchor="right", yanchor="bottom", font=dict(size=11, color=C["muted"]))
+    fig.add_annotation(x=latest_date, y=1, yref="paper", text="Historical  ◄", showarrow=False,
+                       xanchor="right", yanchor="bottom", xshift=-6, font=dict(size=12, color=C["accent"]))
+    fig.add_annotation(x=latest_date, y=1, yref="paper", text="►  Forecast", showarrow=False,
+                       xanchor="left", yanchor="bottom", xshift=6, font=dict(size=12, color=C["forecast"]))
 
     if show_events:
         for d, txt in [("2020-03-01", "COVID-19"), ("2023-05-01", "Subsidy removal")]:
@@ -275,7 +296,7 @@ def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False
         template="plotly_dark", height=height, hovermode="x unified",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         yaxis_title=f"Price ({unit})", xaxis_title=None,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        showlegend=False,
         margin=dict(t=40, b=10, l=10, r=10),
     )
     fig.update_xaxes(tickformat="%b %Y", showgrid=False)
@@ -330,11 +351,10 @@ def overview_insight():
 if page == "Overview":
     page_header("Overview · What is happening")
     kpi_row()
-    section("Price history and 6-month forecast")
-    st.plotly_chart(forecast_chart(height=400), width="stretch")
-    st.caption("Shaded band = 80% range: the model expects the actual price to land inside it "
-               "about 8 times out of 10. Everything right of the dotted line is a forecast.")
     overview_insight()
+    section("Price history and 6-month forecast")
+    st.plotly_chart(forecast_chart(height=400), width="stretch", config=PLOT_CFG)
+    range_note()
 
     left, right = st.columns([3, 2])
     with left:
@@ -349,6 +369,7 @@ if page == "Overview":
 elif page == "Forecast":
     page_header("Forecast · Projections and historical trend")
     kpi_row()
+    overview_insight()
     section("Price history and forecast")
     ctl1, ctl2, ctl3 = st.columns([2, 2, 2])
     rng = ctl1.radio("Range", ["2Y", "5Y", "All"], index=1, horizontal=True, key="range")
@@ -356,10 +377,8 @@ elif page == "Forecast":
     show_thr = ctl3.toggle("Show status thresholds", value=False)
     years = {"2Y": 2, "5Y": 5, "All": None}[rng]
     st.plotly_chart(forecast_chart(height=460, years=years, show_events=show_events,
-                                   show_thresholds=show_thr), width="stretch")
-    st.caption("Dashed line = forecast; shaded band = 80% range (the actual price should fall "
-               "inside it about 8 in 10 times).")
-    overview_insight()
+                                   show_thresholds=show_thr), width="stretch", config=PLOT_CFG)
+    range_note()
 
     section(f"Monthly forecast · {fc['date'].min().strftime('%b %Y')} – {fc['date'].max().strftime('%b %Y')}")
     d = fc[["date", "forecast", "lower_80", "upper_80"]].copy()
@@ -393,7 +412,7 @@ elif page == "Drivers":
                        plot_bgcolor="rgba(0,0,0,0)", xaxis_title="Share of driver influence (%)",
                        margin=dict(t=10, b=10, l=10, r=40), yaxis=dict(automargin=True))
     fig2.update_xaxes(gridcolor=C["border"], range=[0, max(d.values) * 1.15])
-    st.plotly_chart(fig2, width="stretch")
+    st.plotly_chart(fig2, width="stretch", config=PLOT_CFG)
 
     with st.expander("How to read this"):
         st.markdown(
@@ -427,7 +446,7 @@ elif page == "Price Status":
     insight(f"{label} is <b>{status_label.lower()}</b> today. {proj_txt}")
 
     section("Price against status thresholds")
-    st.plotly_chart(forecast_chart(height=380, years=3, show_thresholds=True), width="stretch")
+    st.plotly_chart(forecast_chart(height=380, years=3, show_thresholds=True), width="stretch", config=PLOT_CFG)
 
     with st.expander("How thresholds work"):
         st.markdown(
@@ -487,6 +506,8 @@ elif page == "Methodology":
     st.write("NBS (food prices, CPI, fuel), CHIRPS (rainfall), Investing.com (exchange rate). "
              "National level, monthly, Jan 2016 – " + latest_date.strftime("%b %Y") + ".")
 
-st.markdown("---")
-st.caption("FoodSight Nigeria — MSc Information Technology project, University of Ilorin. "
-           "For research and educational use; not a substitute for official NBS or CBN price data.")
+st.markdown(
+    "<div class='fs-footer'>FoodSight Nigeria — MSc Information Technology project, University of Ilorin. "
+    "For research and educational use; not a substitute for official NBS or CBN price data.</div>",
+    unsafe_allow_html=True,
+)
