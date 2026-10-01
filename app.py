@@ -19,7 +19,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="FoodSight Nigeria", page_icon="🌾", layout="wide",
+_LOGO = Path(__file__).parent / "assets" / "logo.png"
+st.set_page_config(page_title="FoodSight Nigeria", page_icon=str(_LOGO) if _LOGO.exists() else "🌾",
+                   layout="wide",
                    initial_sidebar_state="expanded")
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -36,8 +38,8 @@ COMMODITY_LABELS = {
     "Maize_white": "Maize (White)",
 }
 CATEGORIES = {
-    "Rice_local": "Grains & tubers", "Rice_imported": "Grains & tubers",
-    "Gari_white": "Grains & tubers", "Yam": "Grains & tubers", "Maize_white": "Grains & tubers",
+    "Rice_local": "Staples", "Rice_imported": "Staples",
+    "Gari_white": "Staples", "Yam": "Staples", "Maize_white": "Staples",
     "Beans_brown": "Legumes",
     "Palm_oil": "Oils", "Groundnut_oil": "Oils", "Vegetable_oil": "Oils",
 }
@@ -70,9 +72,35 @@ STATUS = {  # key -> (label, colour, plain-language description)
     "high": ("High", C["red"], "above its recent spike threshold"),
 }
 
+def _icon(path):
+    svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='" + path +
+           "' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' "
+           "stroke-linejoin='round'/></svg>")
+    return 'url("data:image/svg+xml,' + svg.replace("<", "%3C").replace(">", "%3E") + '")'
+
+
+# Sidebar toggle icons (swap the path data to restyle): chevron to close, menu to open.
+ICON_COLLAPSE = _icon("M15 5l-7 7 7 7")
+ICON_EXPAND = _icon("M4 7h16M4 12h16M4 17h16")
+
 st.markdown(
     f"""
 <style>
+  /* Replace Streamlit's « » glyphs on the sidebar toggle with custom icons (behaviour unchanged) */
+  [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
+  [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {{
+      font-size:0 !important; width:1.5rem; height:1.5rem; display:inline-block; position:relative; }}
+  [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after,
+  [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"]::after {{
+      content:""; position:absolute; inset:0; background-color:{C['muted']};
+      -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+      -webkit-mask-position:center; mask-position:center;
+      -webkit-mask-size:1.35rem; mask-size:1.35rem; }}
+  [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after {{
+      -webkit-mask-image:{ICON_COLLAPSE}; mask-image:{ICON_COLLAPSE}; }}
+  [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"]::after {{
+      -webkit-mask-image:{ICON_EXPAND}; mask-image:{ICON_EXPAND}; }}
+  button:hover > span > [data-testid="stIconMaterial"]::after {{ background-color:{C['text']}; }}
   .block-container {{ padding-top: 0; max-width: 1400px; }}
   /* Sticky page header + KPI row. The top padding sits underneath Streamlit's fixed top bar
      so scrolled content never shows through it. Set STICKY_HEADER = False to disable. */
@@ -84,6 +112,9 @@ st.markdown(
      which also holds the sidebar open/close arrow. */
   [data-testid="stToolbarActions"], [data-testid="stMainMenu"], [data-testid="stAppDeployButton"],
   .stDeployButton, #MainMenu, footer {{ display:none !important; }}
+  /* Slimmer sidebar (Streamlit default is ~21rem). Applied only while expanded. */
+  section[data-testid="stSidebar"][aria-expanded="true"] {{ width:16.5rem !important;
+      min-width:16.5rem !important; max-width:16.5rem !important; }}
   .fs-eyebrow {{ color:{C['muted']}; font-size:.85rem; letter-spacing:.01em; margin:0; }}
   .fs-footer {{ border-top:1px solid {C['border']}; margin-top:3rem; padding-top:.8rem;
                 color:{C['muted']}; opacity:.7; font-size:.72rem; }}
@@ -157,7 +188,18 @@ COMMODITIES = list(COMMODITY_LABELS.keys())
 # ---------------------------------------------------------------------------
 # Sidebar: brand → commodity selector → navigation → footer
 # ---------------------------------------------------------------------------
-st.sidebar.markdown("## 🌾 FoodSight Nigeria")
+LOGO_SVG = (
+    "<svg width='30' height='30' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'>"
+    f"<rect width='32' height='32' rx='8' fill='{C['accent']}'/>"
+    "<polyline points='6,22 12,16 17,19 23,10' fill='none' stroke='white' stroke-width='2.6' "
+    "stroke-linecap='round' stroke-linejoin='round'/>"
+    f"<circle cx='26' cy='8' r='3.2' fill='{C['forecast']}'/></svg>"
+)
+st.sidebar.markdown(
+    f"<div style='display:flex;align-items:center;gap:.6rem;margin-top:.2rem'>{LOGO_SVG}"
+    "<span style='font-size:1.25rem;font-weight:700'>FoodSight Nigeria</span></div>",
+    unsafe_allow_html=True,
+)
 st.sidebar.caption("Forecasting Nigerian food price volatility")
 
 if not DATA_OK:
