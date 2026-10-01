@@ -77,7 +77,7 @@ st.markdown(
   /* Sticky page header + KPI row. The top padding sits underneath Streamlit's fixed top bar
      so scrolled content never shows through it. Set STICKY_HEADER = False to disable. */
   /* Streamlit puts the key class on an inner block, so make its *parent wrapper* sticky. */
-  div:has(> .st-key-sticky_top) {{ position:sticky; top:0; z-index:100; }}
+  div:has(> .st-key-sticky_top) {{ position:sticky; top:0; z-index:100; margin-bottom:.6rem; }}
   .st-key-sticky_top {{ background:{C['bg']}; padding:3.75rem 0 1.5rem 0;
                         border-bottom:1px solid {C['border']}; margin-bottom:.6rem; }}
   /* Hide framework chrome (deploy button, menu, footer) but NOT the toolbar container,
@@ -124,6 +124,25 @@ def load_data():
     break_summary = pd.read_csv(DATA_DIR / "structural_break_summary.csv", index_col=0)
     return merged, forecasts, mape_summary, shap_pct, thresholds, break_summary
 
+
+@st.cache_data
+def _read_optional(path, mtime):
+    return pd.read_csv(path, index_col=0)
+
+
+def load_optional(filename):
+    """Optional error-metric files (same layout as the MAPE summary). None if not present yet.
+    The file's modified-time is part of the cache key, so a newly added/updated CSV is picked up."""
+    path = DATA_DIR / filename
+    return _read_optional(str(path), path.stat().st_mtime) if path.exists() else None
+
+
+# Add MAE / RMSE here later by dropping the CSVs in data/ -- no other code change needed.
+EXTRA_METRICS = {
+    "MAE": load_optional("all_commodities_mae_summary.csv"),
+    "RMSE": load_optional("all_commodities_rmse_summary.csv"),
+}
+EXTRA_METRICS = {k: v for k, v in EXTRA_METRICS.items() if v is not None}
 
 try:
     merged, forecasts, mape_summary, shap_pct, thresholds, break_summary = load_data()
@@ -377,7 +396,7 @@ if page == "Overview":
     st.plotly_chart(forecast_chart(height=400), width="stretch", config=PLOT_CFG)
     range_note()
 
-    left, right = st.columns([3, 2])
+    left, right = st.columns(2)
     with left:
         section("Key drivers")
         st.markdown(f"<div class='fs-card'>{driver_bars(n=3)}"
@@ -507,9 +526,29 @@ elif page == "Methodology":
     c3.markdown(kpi_card("ARIMA order", str(fc["arima_order"].iloc[0]),
                          "(p, d, q) fitted on full series", small=True), unsafe_allow_html=True)
 
-    section("Model comparison (walk-forward MAPE, lower is better)")
-    row = mape_summary.loc[[selected], ["ARIMA", "ARIMAX", "LightGBM"]]
-    st.dataframe(row.style.format("{:.2f}%"), width="stretch")
+    avail = {k: v for k, v in EXTRA_METRICS.items() if selected in v.index and best_model in v.columns}
+    if avail:
+        st.markdown("<div style='height:1.6rem'></div>", unsafe_allow_html=True)
+        cols = st.columns(len(avail))
+        blurbs = {"MAE": "Typical miss, in naira (walk-forward)",
+                  "RMSE": "Like MAE, but penalises large misses more"}
+        for col, (name, df) in zip(cols, avail.items()):
+            col.markdown(kpi_card(name, naira(float(df.loc[selected, best_model]), 2),
+                                  f"{blurbs[name]} · {unit}", small=True), unsafe_allow_html=True)
+
+    section("Model comparison (walk-forward, lower is better)")
+    models = ["ARIMA", "ARIMAX", "LightGBM"]
+    tables = {"MAPE": (mape_summary.loc[[selected], models], "{:.2f}%")}
+    for name, df in EXTRA_METRICS.items():
+        if selected in df.index and all(m in df.columns for m in models):
+            tables[name] = (df.loc[[selected], models], "₦{:,.2f}")
+    if len(tables) == 1:
+        row, fmt = tables["MAPE"]
+        st.dataframe(row.style.format(fmt), width="stretch")
+    else:
+        for tab, (name, (row, fmt)) in zip(st.tabs(list(tables)), tables.items()):
+            with tab:
+                st.dataframe(row.style.format(fmt), width="stretch")
     st.caption(
         "ARIMA is the best-performing model for every commodity in this study — external variables "
         "did not improve on the univariate baseline at this sample size and monthly resolution, a "
@@ -519,6 +558,18 @@ elif page == "Methodology":
         st.markdown("Mean Absolute Percentage Error: on average, how far the forecast landed from the "
                     "actual price, as a percentage of the actual price. Walk-forward means each "
                     "forecast used only data available at the time.")
+
+    if avail:
+        with st.expander("What are MAE and RMSE?"):
+            st.markdown(
+                "- **MAE** (Mean Absolute Error): the average size of the forecast miss, in naira. "
+                "Easy to read; every miss counts equally.\n"
+                "- **RMSE** (Root Mean Squared Error): also in naira, but squares each miss first, "
+                "so a few large misses push it up more. If RMSE is much higher than MAE, the model "
+                "occasionally misses badly.\n"
+                "- MAPE expresses the error as a percentage, which makes commodities with different "
+                "price levels comparable; MAE and RMSE show the size in naira."
+            )
 
     section("Structural break around the May 2023 subsidy removal")
     if selected in break_summary.index:
