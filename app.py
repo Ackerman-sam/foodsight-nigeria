@@ -19,7 +19,8 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="FoodSight Nigeria", page_icon="🌾", layout="wide")
+st.set_page_config(page_title="FoodSight Nigeria", page_icon="🌾", layout="wide",
+                   initial_sidebar_state="expanded")
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -71,17 +72,19 @@ STATUS = {  # key -> (label, colour, plain-language description)
 st.markdown(
     f"""
 <style>
-  .block-container {{ padding-top: 2rem; max-width: 1400px; }}
-  /* Hide Streamlit framework chrome (Fork / GitHub / menu / footer); keep sidebar toggle */
-  [data-testid="stToolbar"], [data-testid="stAppDeployButton"], .stDeployButton,
-  #MainMenu, footer {{ visibility:hidden; height:0; }}
+  .block-container {{ padding-top: 4.5rem; max-width: 1400px; }}
+  /* Hide framework chrome (deploy button, menu, footer) but NOT the toolbar container,
+     which also holds the sidebar open/close arrow. */
+  [data-testid="stToolbarActions"], [data-testid="stMainMenu"], [data-testid="stAppDeployButton"],
+  .stDeployButton, #MainMenu, footer {{ display:none !important; }}
   .fs-eyebrow {{ color:{C['muted']}; font-size:.85rem; letter-spacing:.01em; margin:0; }}
   .fs-footer {{ border-top:1px solid {C['border']}; margin-top:3rem; padding-top:.8rem;
                 color:{C['muted']}; opacity:.7; font-size:.72rem; }}
   .fs-title {{ font-size:2rem; font-weight:700; margin:.1rem 0 1rem 0; line-height:1.15; }}
   .fs-card {{ background:{C['surface']}; border:1px solid {C['border']}; border-radius:10px;
-              padding:1rem 1.1rem; height:100%; min-height:7.6rem;
-              display:flex; flex-direction:column; justify-content:flex-start; }}
+              padding:1rem 1.1rem; box-sizing:border-box; }}
+  .fs-kpi {{ height:8.75rem; overflow:hidden; display:flex; flex-direction:column; }}
+  .fs-kpi .fs-sub {{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   .fs-label {{ color:{C['muted']}; font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; margin:0; }}
   .fs-value {{ font-size:1.9rem; font-weight:700; line-height:1.2; margin:.25rem 0 .1rem 0; }}
   .fs-value.sm {{ font-size:1.5rem; }}
@@ -204,11 +207,12 @@ def naira(x: float, dp: int = 0) -> str:
 # ---------------------------------------------------------------------------
 # UI helpers
 # ---------------------------------------------------------------------------
-def kpi_card(title, value, sub, color=None, small=False):
+def kpi_card(title, value, sub, color=None, small=False, fixed=False):
     style = f" style='color:{color}'" if color else ""
     cls = "fs-value sm" if small else "fs-value"
-    return (f"<div class='fs-card'><p class='fs-label'>{title}</p>"
-            f"<p class='{cls}'{style}>{value}</p><p class='fs-sub'>{sub}</p></div>")
+    card = "fs-card fs-kpi" if fixed else "fs-card"
+    return (f"<div class='{card}'><div class='fs-label'>{title}</div>"
+            f"<div class='{cls}'{style}>{value}</div><div class='fs-sub'>{sub}</div></div>")
 
 
 def insight(text_html):
@@ -216,25 +220,25 @@ def insight(text_html):
 
 
 def section(text):
-    st.markdown(f"<p class='fs-section'>{text}</p>", unsafe_allow_html=True)
+    st.markdown(f"<div class='fs-section'>{text}</div>", unsafe_allow_html=True)
 
 
 def page_header(eyebrow):
-    st.markdown(f"<p class='fs-eyebrow'>{eyebrow}</p><p class='fs-title'>{label}</p>",
+    st.markdown(f"<div class='fs-eyebrow'>{eyebrow}</div><div class='fs-title'>{label}</div>",
                 unsafe_allow_html=True)
 
 
 def kpi_row():
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(kpi_card("Current price", naira(latest_price, 2),
-                         f"{unit} · {latest_date.strftime('%B %Y')}"), unsafe_allow_html=True)
+                         f"{unit} · {latest_date.strftime('%B %Y')}", fixed=True), unsafe_allow_html=True)
     c2.markdown(kpi_card("6-month outlook", f"{outlook_arrow} {outlook_pct:+.1f}%",
                          f"{outlook_word} to {naira(end_fc['forecast'])} by {end_fc['date'].strftime('%b %Y')}",
-                         outlook_color), unsafe_allow_html=True)
+                         outlook_color, fixed=True), unsafe_allow_html=True)
     c3.markdown(kpi_card("Price status", status_label,
-                         "Vs. recent 24-month range", status_color), unsafe_allow_html=True)
+                         "Vs. recent 24-month range", status_color, fixed=True), unsafe_allow_html=True)
     c4.markdown(kpi_card("Forecast accuracy", f"{best_mape:.2f}%",
-                         f"Average error · 1-month-ahead · {best_model}"), unsafe_allow_html=True)
+                         f"Avg. error, 1-month-ahead ({best_model})", fixed=True), unsafe_allow_html=True)
 
 
 def range_note():
@@ -321,9 +325,9 @@ def driver_bars(n=None, height=None):
 def status_banner():
     st.markdown(
         f"<div class='fs-status-banner' style='background:{status_color}1f;border:1px solid {status_color}66;'>"
-        f"<p class='fs-label' style='color:{status_color}'>Price status</p>"
-        f"<p class='fs-value' style='color:{status_color};margin:.15rem 0'>{status_label}</p>"
-        f"<p class='fs-sub' style='color:{C['text']}'>{label} is {naira(latest_price)}, {status_desc}.</p></div>",
+        f"<div class='fs-label' style='color:{status_color}'>Price status</div>"
+        f"<div class='fs-value' style='color:{status_color};margin:.15rem 0'>{status_label}</div>"
+        f"<div class='fs-sub' style='color:{C['text']}'>{label} is {naira(latest_price)}, {status_desc}.</div></div>",
         unsafe_allow_html=True)
 
 
@@ -360,8 +364,8 @@ if page == "Overview":
     with left:
         section("Key drivers")
         st.markdown(f"<div class='fs-card'>{driver_bars(n=3)}"
-                    f"<p class='fs-sub' style='margin-top:.6rem'>Share of driver influence. "
-                    f"See the Drivers view for all factors.</p></div>", unsafe_allow_html=True)
+                    f"<div class='fs-sub' style='margin-top:.6rem'>Share of driver influence. "
+                    f"See the Drivers view for all factors.</div></div>", unsafe_allow_html=True)
     with right:
         section("Price status")
         status_banner()
