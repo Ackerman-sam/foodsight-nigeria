@@ -52,6 +52,7 @@ DRIVER_LABELS = {
     "post_subsidy_removal": "Post-subsidy period",
 }
 PLOT_CFG = {"displayModeBar": False}  # hide Plotly toolbar
+EVENTS = [("2020-03-01", "COVID-19"), ("2023-05-01", "Subsidy removal")]
 PAGES = ["Overview", "Forecast", "Drivers", "Price Status", "Methodology"]
 
 # ---------------------------------------------------------------------------
@@ -72,7 +73,13 @@ STATUS = {  # key -> (label, colour, plain-language description)
 st.markdown(
     f"""
 <style>
-  .block-container {{ padding-top: 4.5rem; max-width: 1400px; }}
+  .block-container {{ padding-top: 0; max-width: 1400px; }}
+  /* Sticky page header + KPI row. The top padding sits underneath Streamlit's fixed top bar
+     so scrolled content never shows through it. Set STICKY_HEADER = False to disable. */
+  /* Streamlit puts the key class on an inner block, so make its *parent wrapper* sticky. */
+  div:has(> .st-key-sticky_top) {{ position:sticky; top:0; z-index:100; }}
+  .st-key-sticky_top {{ background:{C['bg']}; padding:3.75rem 0 1.5rem 0;
+                        border-bottom:1px solid {C['border']}; margin-bottom:.6rem; }}
   /* Hide framework chrome (deploy button, menu, footer) but NOT the toolbar container,
      which also holds the sidebar open/close arrow. */
   [data-testid="stToolbarActions"], [data-testid="stMainMenu"], [data-testid="stAppDeployButton"],
@@ -80,10 +87,11 @@ st.markdown(
   .fs-eyebrow {{ color:{C['muted']}; font-size:.85rem; letter-spacing:.01em; margin:0; }}
   .fs-footer {{ border-top:1px solid {C['border']}; margin-top:3rem; padding-top:.8rem;
                 color:{C['muted']}; opacity:.7; font-size:.72rem; }}
-  .fs-title {{ font-size:2rem; font-weight:700; margin:.1rem 0 1rem 0; line-height:1.15; }}
+  .fs-title {{ font-size:1.7rem; font-weight:700; margin:.05rem 0 .7rem 0; line-height:1.15; }}
   .fs-card {{ background:{C['surface']}; border:1px solid {C['border']}; border-radius:10px;
               padding:1rem 1.1rem; box-sizing:border-box; }}
-  .fs-kpi {{ height:8.75rem; overflow:hidden; display:flex; flex-direction:column; }}
+  .fs-kpi {{ height:6.9rem; padding:.75rem 1rem; overflow:hidden; display:flex; flex-direction:column; }}
+  .fs-kpi .fs-value, .fs-kpi .fs-value.sm {{ font-size:1.6rem; margin:.15rem 0 .05rem 0; }}
   .fs-kpi .fs-sub {{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   .fs-label {{ color:{C['muted']}; font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; margin:0; }}
   .fs-value {{ font-size:1.9rem; font-weight:700; line-height:1.2; margin:.25rem 0 .1rem 0; }}
@@ -223,6 +231,14 @@ def section(text):
     st.markdown(f"<div class='fs-section'>{text}</div>", unsafe_allow_html=True)
 
 
+STICKY_HEADER = True
+
+
+def top_block():
+    """Container for the page header + KPI cards; sticky while scrolling."""
+    return st.container(key="sticky_top") if STICKY_HEADER else st.container()
+
+
 def page_header(eyebrow):
     st.markdown(f"<div class='fs-eyebrow'>{eyebrow}</div><div class='fs-title'>{label}</div>",
                 unsafe_allow_html=True)
@@ -238,11 +254,11 @@ def kpi_row():
     c3.markdown(kpi_card("Price status", status_label,
                          "Vs. recent 24-month range", status_color, fixed=True), unsafe_allow_html=True)
     c4.markdown(kpi_card("Forecast accuracy", f"{best_mape:.2f}%",
-                         f"Avg. error, 1-month-ahead ({best_model})", fixed=True), unsafe_allow_html=True)
+                         f"Avg. 1-month error · {best_model}", fixed=True), unsafe_allow_html=True)
 
 
 def range_note():
-    st.caption("Shaded band = 80% range ⓘ", help="The model expects the actual price to land inside the "
+    st.caption("Shaded band = 80% range", help="The model expects the actual price to land inside the "
                "band about 8 times out of 10. Everything right of the dotted line is a forecast.")
 
 
@@ -287,14 +303,14 @@ def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False
                        xanchor="left", yanchor="bottom", xshift=6, font=dict(size=12, color=C["forecast"]))
 
     if show_events:
-        for d, txt in [("2020-03-01", "COVID-19"), ("2023-05-01", "Subsidy removal")]:
+        for d, txt in EVENTS:
             ts = pd.Timestamp(d)
             if ts >= start:
                 fig.add_shape(type="line", x0=ts, x1=ts, y0=0, y1=1, yref="paper",
                               line=dict(color=C["muted"], width=1, dash="dot"))
-                fig.add_annotation(x=ts, y=0, yref="paper", text=txt, showarrow=False,
-                                   xanchor="left", yanchor="bottom", textangle=-90,
-                                   font=dict(size=10, color=C["muted"]))
+                fig.add_annotation(x=ts, y=0.98, yref="paper", text=txt, showarrow=False,
+                                   xanchor="left", yanchor="top", xshift=4,
+                                   font=dict(size=11, color=C["muted"]))
 
     fig.update_layout(
         template="plotly_dark", height=height, hovermode="x unified",
@@ -324,9 +340,9 @@ def driver_bars(n=None, height=None):
 
 def status_banner():
     st.markdown(
-        f"<div class='fs-status-banner' style='background:{status_color}1f;border:1px solid {status_color}66;'>"
+        f"<div class='fs-card fs-kpi' style='background:{status_color}1f;border:1px solid {status_color}66;'>"
         f"<div class='fs-label' style='color:{status_color}'>Price status</div>"
-        f"<div class='fs-value' style='color:{status_color};margin:.15rem 0'>{status_label}</div>"
+        f"<div class='fs-value' style='color:{status_color}'>{status_label}</div>"
         f"<div class='fs-sub' style='color:{C['text']}'>{label} is {naira(latest_price)}, {status_desc}.</div></div>",
         unsafe_allow_html=True)
 
@@ -353,8 +369,9 @@ def overview_insight():
 # PAGES
 # ===========================================================================
 if page == "Overview":
-    page_header("Overview · What is happening")
-    kpi_row()
+    with top_block():
+        page_header("Overview · What is happening")
+        kpi_row()
     overview_insight()
     section("Price history and 6-month forecast")
     st.plotly_chart(forecast_chart(height=400), width="stretch", config=PLOT_CFG)
@@ -371,18 +388,25 @@ if page == "Overview":
         status_banner()
 
 elif page == "Forecast":
-    page_header("Forecast · Projections and historical trend")
-    kpi_row()
+    with top_block():
+        page_header("Forecast · Projections and historical trend")
+        kpi_row()
     overview_insight()
     section("Price history and forecast")
     ctl1, ctl2, ctl3 = st.columns([2, 2, 2])
-    rng = ctl1.radio("Range", ["2Y", "5Y", "All"], index=1, horizontal=True, key="range")
+    rng = ctl1.radio("Range", ["2Y", "3Y", "5Y", "All"], index=2, horizontal=True, key="range")
     show_events = ctl2.toggle("Show events", value=False, help="COVID-19 and subsidy removal markers")
     show_thr = ctl3.toggle("Show status thresholds", value=False)
-    years = {"2Y": 2, "5Y": 5, "All": None}[rng]
+    years = {"2Y": 2, "3Y": 3, "5Y": 5, "All": None}[rng]
     st.plotly_chart(forecast_chart(height=460, years=years, show_events=show_events,
                                    show_thresholds=show_thr), width="stretch", config=PLOT_CFG)
     range_note()
+    if show_events and years:
+        _start = latest_date - pd.DateOffset(years=years)
+        hidden = [n for d, n in EVENTS if pd.Timestamp(d) < _start]
+        if hidden:
+            st.caption("Not in this range: " + ", ".join(hidden) + ". Choose a longer range to see "
+                       + ("it." if len(hidden) == 1 else "them."))
 
     section(f"Monthly forecast · {fc['date'].min().strftime('%b %Y')} – {fc['date'].max().strftime('%b %Y')}")
     d = fc[["date", "forecast", "lower_80", "upper_80"]].copy()
@@ -398,7 +422,8 @@ elif page == "Forecast":
         width="stretch")
 
 elif page == "Drivers":
-    page_header("Drivers · Factors influencing price")
+    with top_block():
+        page_header("Drivers · Factors influencing price")
     insight(
         f"For <b>{label}</b>, the leading driver is <b>{top_driver}</b> ({top_driver_pct:.0f}% of the "
         f"model's driver-based influence)."
@@ -430,18 +455,19 @@ elif page == "Drivers":
         )
 
 elif page == "Price Status":
-    page_header("Price Status · Normal, watch or high")
-    top, side = st.columns([3, 2])
-    with top:
-        status_banner()
-    with side:
-        gap_amber = (amber / latest_price - 1) * 100
-        gap_red = (red / latest_price - 1) * 100
-        st.markdown(kpi_card(
-            "Distance to thresholds",
-            f"{gap_amber:+.1f}% to Watch" if status == "normal" else
-            (f"{gap_red:+.1f}% to High" if status == "watch" else "Above High"),
-            f"Watch at {naira(amber)} · High at {naira(red)}", small=True), unsafe_allow_html=True)
+    with top_block():
+        page_header("Price Status · Normal, watch or high")
+        left, right = st.columns(2)
+        with left:
+            status_banner()
+        with right:
+            gap_amber = (amber / latest_price - 1) * 100
+            gap_red = (red / latest_price - 1) * 100
+            st.markdown(kpi_card(
+                "Distance to thresholds",
+                f"{gap_amber:+.1f}% to Watch" if status == "normal" else
+                (f"{gap_red:+.1f}% to High" if status == "watch" else "Above High"),
+                f"Watch at {naira(amber)} · High at {naira(red)}", fixed=True), unsafe_allow_html=True)
 
     proj_txt = (f"Looking ahead, the forecast stays <b>{STATUS[peak_status][0].lower()}</b>-level through "
                 f"{end_fc['date'].strftime('%B %Y')}." if peak_status == status else
@@ -466,7 +492,8 @@ elif page == "Price Status":
         b.metric("Pre-subsidy 90th pct. (reference)", naira(float(t["red_threshold_p90"]), 2))
 
 elif page == "Methodology":
-    page_header("Methodology · Models, accuracy and data")
+    with top_block():
+        page_header("Methodology · Models, accuracy and data")
     st.markdown(
         "Three models are compared under walk-forward validation for each commodity: **ARIMA** "
         "(univariate baseline), **ARIMAX** (multivariate extension) and **LightGBM** (gradient-boosted "
