@@ -105,7 +105,7 @@ st.markdown(
       -webkit-mask-image:{ICON_EXPAND}; mask-image:{ICON_EXPAND}; }}
   button:hover > span > [data-testid="stIconMaterial"]::after {{ background-color:{C['text']}; }}
   .block-container {{ padding-top: 0; max-width: 1400px; }}
-  /* Sticky page header + KPI row. The top padding sits underneath Streamlit's fixed top bar
+  /* Sticky page header (title only; KPI cards scroll with the page). The top padding sits underneath Streamlit's fixed top bar
      so scrolled content never shows through it. Set STICKY_HEADER = False to disable. */
   /* Streamlit puts the key class on an inner block, so make its *parent wrapper* sticky. */
   div:has(> .st-key-sticky_top) {{ position:sticky; top:0; z-index:100; margin-bottom:.6rem; }}
@@ -298,7 +298,7 @@ STICKY_HEADER = True
 
 
 def top_block():
-    """Container for the page header + KPI cards; sticky while scrolling."""
+    """Container for the page title; sticky while scrolling (KPI cards scroll normally)."""
     return st.container(key="sticky_top") if STICKY_HEADER else st.container()
 
 
@@ -434,7 +434,7 @@ def overview_insight():
 if page == "Overview":
     with top_block():
         page_header("Overview · What is happening")
-        kpi_row()
+    kpi_row()
     overview_insight()
     section("Price history and 6-month forecast")
     st.plotly_chart(forecast_chart(height=400), width="stretch", config=PLOT_CFG)
@@ -453,7 +453,7 @@ if page == "Overview":
 elif page == "Forecast":
     with top_block():
         page_header("Forecast · Projections and historical trend")
-        kpi_row()
+    kpi_row()
     overview_insight()
     section("Price history and forecast")
     ctl1, ctl2, ctl3 = st.columns([2, 2, 2])
@@ -520,17 +520,17 @@ elif page == "Drivers":
 elif page == "Price Status":
     with top_block():
         page_header("Price Status · Normal, watch or high")
-        left, right = st.columns(2)
-        with left:
-            status_banner()
-        with right:
-            gap_amber = (amber / latest_price - 1) * 100
-            gap_red = (red / latest_price - 1) * 100
-            st.markdown(kpi_card(
-                "Distance to thresholds",
-                f"{gap_amber:+.1f}% to Watch" if status == "normal" else
-                (f"{gap_red:+.1f}% to High" if status == "watch" else "Above High"),
-                f"Watch at {naira(amber)} · High at {naira(red)}", fixed=True), unsafe_allow_html=True)
+    left, right = st.columns(2)
+    with left:
+        status_banner()
+    with right:
+        gap_amber = (amber / latest_price - 1) * 100
+        gap_red = (red / latest_price - 1) * 100
+        st.markdown(kpi_card(
+            "Distance to thresholds",
+            f"{gap_amber:+.1f}% to Watch" if status == "normal" else
+            (f"{gap_red:+.1f}% to High" if status == "watch" else "Above High"),
+            f"Watch at {naira(amber)} · High at {naira(red)}", fixed=True), unsafe_allow_html=True)
 
     proj_txt = (f"Looking ahead, the forecast stays <b>{STATUS[peak_status][0].lower()}</b>-level through "
                 f"{end_fc['date'].strftime('%B %Y')}." if peak_status == status else
