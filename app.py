@@ -618,13 +618,80 @@ elif page == "Methodology":
                 "price levels comparable; MAE and RMSE show the size in naira."
             )
 
-    section("Structural break around the May 2023 subsidy removal")
+    section("Structural break · May 2023 subsidy removal")
     if selected in break_summary.index:
         b = break_summary.loc[selected]
-        sig = "statistically significant" if b["significant_at_5pct"] else "not statistically significant at 5%"
-        st.write(f"Average monthly growth: **{b['pre_mean_pct_change']:.2f}%** → **{b['post_mean_pct_change']:.2f}%** "
-                 f"(before → after). Volatility (std. dev.): **{b['pre_std']:.2f}%** → **{b['post_std']:.2f}%**. "
-                 f"Welch's t-test on the mean shift: **{sig}** (p = {b['p_value']:.4f}).")
+        is_sig = bool(b["significant_at_5pct"])
+        insight(
+            f"<b>{label}</b>: average monthly price growth went from <b>{b['pre_mean_pct_change']:.2f}%</b> to "
+            f"<b>{b['post_mean_pct_change']:.2f}%</b>, and volatility from <b>{b['pre_std']:.2f}%</b> to "
+            f"<b>{b['post_std']:.2f}%</b>, after the subsidy removal. The shift in average growth is "
+            f"<b>{'statistically significant' if is_sig else 'not statistically significant'}</b> at the 5% level "
+            f"(p = {b['p_value']:.4f})."
+        )
+
+        # --- A: selected commodity, before vs after
+        brk = pd.Timestamp("2023-05-01")
+        t0 = hist["date"].min()
+        figb = go.Figure()
+        figb.add_shape(type="rect", x0=t0, x1=brk, y0=0, y1=1, yref="paper", layer="below",
+                       fillcolor="rgba(139,149,167,0.08)", line_width=0)
+        figb.add_shape(type="rect", x0=brk, x1=latest_date, y0=0, y1=1, yref="paper", layer="below",
+                       fillcolor="rgba(77,163,255,0.08)", line_width=0)
+        figb.add_trace(go.Scatter(x=hist["date"], y=hist["price"], mode="lines",
+                                  line=dict(color=C["accent"], width=2.5),
+                                  hovertemplate="₦%{y:,.0f}<extra></extra>"))
+        figb.add_shape(type="line", x0=brk, x1=brk, y0=0, y1=1, yref="paper",
+                       line=dict(color=C["muted"], width=1, dash="dot"))
+        for x, txt in [(t0 + (brk - t0) / 2, "Before subsidy removal"),
+                       (brk + (latest_date - brk) / 2, "After subsidy removal")]:
+            figb.add_annotation(x=x, y=1, yref="paper", text=txt, showarrow=False, yanchor="bottom",
+                                font=dict(size=12, color=C["muted"]))
+        figb.update_layout(template="plotly_dark", height=300, showlegend=False, hovermode="x unified",
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           yaxis_title=f"Price ({unit})", xaxis_title=None,
+                           margin=dict(t=30, b=10, l=10, r=10))
+        figb.update_xaxes(tickformat="%Y", showgrid=False)
+        figb.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
+        st.plotly_chart(figb, width="stretch", config=PLOT_CFG)
+
+        # --- B: all commodities, before vs after (selected one highlighted, ★ = significant)
+        idx = list(break_summary.index)
+        names = [("★ " if bool(break_summary.loc[c, "significant_at_5pct"]) else "") +
+                 COMMODITY_LABELS.get(c, c) for c in idx]
+        opac = [1.0 if c == selected else 0.4 for c in idx]
+
+        def compare_chart(pre_col, post_col, title):
+            f = go.Figure()
+            for col, nm, colr in [(pre_col, "Before", "#7d8aa3"), (post_col, "After", C["accent"])]:
+                f.add_trace(go.Bar(y=names, x=break_summary[col].values, orientation="h", name=nm,
+                                   marker=dict(color=colr, opacity=opac),
+                                   text=[f"{v:.2f}%" for v in break_summary[col].values],
+                                   textposition="outside", textfont=dict(size=10),
+                                   hovertemplate="%{y}: %{x:.2f}%<extra>" + nm + "</extra>"))
+            f.update_layout(template="plotly_dark", barmode="group", height=440, title=dict(text=title, font=dict(size=14)),
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="right", x=1),
+                            margin=dict(t=60, b=10, l=10, r=40), xaxis_title=None)
+            f.update_yaxes(autorange="reversed", automargin=True)
+            f.update_xaxes(gridcolor=C["border"], ticksuffix="%",
+                           range=[0, float(max(break_summary[pre_col].max(), break_summary[post_col].max())) * 1.25])
+            return f
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.plotly_chart(compare_chart("pre_mean_pct_change", "post_mean_pct_change",
+                                          "Average monthly growth"), width="stretch", config=PLOT_CFG)
+        with c2:
+            st.plotly_chart(compare_chart("pre_std", "post_std", "Volatility (std. dev. of monthly growth)"),
+                            width="stretch", config=PLOT_CFG)
+        st.caption("★ = shift in average growth is significant at 5% (Welch's t-test). "
+                   f"{label} is highlighted.")
+        st.markdown(
+            f"<div class='fs-insight'><b>Why this matters:</b> prices rose structurally after the subsidy "
+            f"removal, so a fixed pre-2023 baseline would flag nearly every commodity as high forever. "
+            f"Price status therefore compares against the <b>last 24 months</b> instead.</div>",
+            unsafe_allow_html=True)
 
     section("Thresholds")
     st.write(f"Rolling 24-month percentiles: Watch (75th) **{naira(amber, 2)}**, High (90th) **{naira(red, 2)}**. "
