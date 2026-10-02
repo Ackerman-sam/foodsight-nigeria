@@ -107,9 +107,12 @@ st.markdown(
   .block-container {{ padding-top: 0; max-width: 1400px; }}
   /* Sticky page header (title only; KPI cards scroll with the page). The top padding sits underneath Streamlit's fixed top bar
      so scrolled content never shows through it. Set STICKY_HEADER = False to disable. */
+  /* Slimmer top bar (default 3.75rem is mostly empty) so content starts higher. */
+  header[data-testid="stHeader"] {{ height:2.25rem; min-height:2.25rem; background:transparent; }}
+  [data-testid="stSidebarHeader"] {{ height:auto; min-height:2.25rem; padding-top:.6rem; padding-bottom:0; }}
   /* Streamlit puts the key class on an inner block, so make its *parent wrapper* sticky. */
   div:has(> .st-key-sticky_top) {{ position:sticky; top:0; z-index:100; margin-bottom:.6rem; }}
-  .st-key-sticky_top {{ background:{C['bg']}; padding:3.75rem 0 1.5rem 0;
+  .st-key-sticky_top {{ background:{C['bg']}; padding:2.25rem 0 1.5rem 0;
                         border-bottom:1px solid {C['border']}; margin-bottom:.6rem; }}
   /* Hide framework chrome (deploy button, menu, footer) but NOT the toolbar container,
      which also holds the sidebar open/close arrow. */
