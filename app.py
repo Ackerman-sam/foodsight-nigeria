@@ -121,6 +121,8 @@ st.markdown(
   /* Slimmer sidebar (Streamlit default is ~21rem). Applied only while expanded. */
   section[data-testid="stSidebar"][aria-expanded="true"] {{ width:16.5rem !important;
       min-width:16.5rem !important; max-width:16.5rem !important; }}
+  .fs-note {{ border-left:3px solid {C['amber']}; background:{C['surface']}; border-radius:6px;
+               padding:.5rem .9rem; margin:.5rem 0 .2rem 0; font-size:.88rem; color:{C['muted']}; }}
   .fs-eyebrow {{ color:{C['muted']}; font-size:.85rem; letter-spacing:.01em; margin:0; }}
   .fs-footer {{ border-top:1px solid {C['border']}; margin-top:3rem; padding-top:.8rem;
                 color:{C['muted']}; opacity:.7; font-size:.72rem; }}
@@ -163,23 +165,22 @@ def load_data():
 
 
 @st.cache_data
-def _read_optional(path, mtime):
-    return pd.read_csv(path, index_col=0)
+def _read_csv(path, mtime, parse_dates):
+    return pd.read_csv(path, parse_dates=parse_dates or False)
 
 
-def load_optional(filename):
-    """Optional error-metric files (same layout as the MAPE summary). None if not present yet.
-    The file's modified-time is part of the cache key, so a newly added/updated CSV is picked up."""
+def load_optional(filename, parse_dates=None):
+    """Optional results file written by notebooks 05/06. Returns None if it is not in data/ yet.
+    The file's modified-time is part of the cache key, so a replaced CSV is picked up automatically."""
     path = DATA_DIR / filename
-    return _read_optional(str(path), path.stat().st_mtime) if path.exists() else None
+    return _read_csv(str(path), path.stat().st_mtime, parse_dates) if path.exists() else None
 
 
-# Add MAE / RMSE here later by dropping the CSVs in data/ -- no other code change needed.
-EXTRA_METRICS = {
-    "MAE": load_optional("all_commodities_mae_summary.csv"),
-    "RMSE": load_optional("all_commodities_rmse_summary.csv"),
-}
-EXTRA_METRICS = {k: v for k, v in EXTRA_METRICS.items() if v is not None}
+COMPARISON = load_optional("all_commodities_model_comparison.csv")        # MAE/(MSE)/RMSE/MAPE, incl. Naive
+SUBPERIOD = load_optional("all_commodities_subperiod_metrics.csv")        # pre/post subsidy removal
+BACKTEST = load_optional("alert_backtest.csv", parse_dates=["date"])      # rolling-24m alert history
+SHAP_LOCAL = load_optional("shap_local_next_month.csv")                   # next-month LightGBM SHAP
+LGBM_NEXT = load_optional("lgbm_next_month.csv")
 
 try:
     merged, forecasts, mape_summary, shap_pct, thresholds, break_summary = load_data()
@@ -257,6 +258,10 @@ def status_key(price: float) -> str:
 
 status = status_key(latest_price)
 status_label, status_color, status_desc = STATUS[status]
+next_fc_price = float(fc.iloc[0]["forecast"])                 # next-month ARIMA forecast
+next_month = fc.iloc[0]["date"]
+next_status = status_key(next_fc_price)
+next_label, next_color, next_desc = STATUS[next_status]
 
 end_fc = fc.iloc[-1]
 outlook_pct = (end_fc["forecast"] / latest_price - 1) * 100
@@ -409,7 +414,7 @@ def status_banner():
         f"<div class='fs-card fs-kpi' style='background:{status_color}1f;border:1px solid {status_color}66;'>"
         f"<div class='fs-label' style='color:{status_color}'>Price status</div>"
         f"<div class='fs-value' style='color:{status_color}'>{status_label}</div>"
-        f"<div class='fs-sub' style='color:{C['text']}'>{label} is {naira(latest_price)}, {status_desc}.</div></div>",
+        f"<div class='fs-sub' style='color:{C['text']}'>{naira(latest_price)} · {latest_date.strftime('%b %Y')}</div></div>",
         unsafe_allow_html=True)
 
 
@@ -431,6 +436,56 @@ def overview_insight():
     )
 
 
+STATUS_FROM_FILE = {"GREEN": "Normal", "AMBER": "Watch", "RED": "High"}
+STATUS_COLOR_FROM_FILE = {"GREEN": C["green"], "AMBER": C["amber"], "RED": C["red"]}
+
+
+def backtest_chart(height=340):
+    b = BACKTEST[BACKTEST["commodity"] == selected].sort_values("date")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=b["date"], y=b["red"], mode="lines", name="High threshold",
+                             line=dict(color=C["red"], width=1.2, dash="dot"),
+                             hovertemplate="₦%{y:,.0f}<extra>High threshold</extra>"))
+    fig.add_trace(go.Scatter(x=b["date"], y=b["amber"], mode="lines", name="Watch threshold",
+                             line=dict(color=C["amber"], width=1.2, dash="dot"),
+                             hovertemplate="₦%{y:,.0f}<extra>Watch threshold</extra>"))
+    fig.add_trace(go.Scatter(
+        x=b["date"], y=b["price"], mode="lines+markers", name="Price (marker = status that month)",
+        line=dict(color=C["muted"], width=1.5),
+        marker=dict(size=8, color=[STATUS_COLOR_FROM_FILE[x] for x in b["status"]]),
+        customdata=[STATUS_FROM_FILE[x] for x in b["status"]],
+        hovertemplate="₦%{y:,.0f} · %{customdata}<extra>Price</extra>"))
+    fig.update_layout(template="plotly_dark", height=height, hovermode="x unified",
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      yaxis_title=f"Price ({unit})", xaxis_title=None,
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                      margin=dict(t=40, b=10, l=10, r=10))
+    fig.update_xaxes(tickformat="%b %Y", showgrid=False)
+    fig.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
+    return fig
+
+
+def waterfall_chart(height=380):
+    s_ = SHAP_LOCAL[SHAP_LOCAL["commodity"] == selected].copy()
+    s_["label"] = s_["feature"].map(DRIVER_LABELS).fillna(s_["feature"])
+    s_ = s_.reindex(s_["shap_ngn"].abs().sort_values(ascending=False).index)
+    ln = LGBM_NEXT.set_index("commodity").loc[selected]
+    base, pred = float(ln["base_value"]), float(ln["lgbm_next_month"])
+    y = ["Model's average price"] + list(s_["label"]) + ["LightGBM estimate"]
+    fig = go.Figure(go.Waterfall(
+        orientation="h", measure=["absolute"] + ["relative"] * len(s_) + ["total"], y=y,
+        x=[base] + list(s_["shap_ngn"]) + [pred],
+        text=[f"₦{base:,.0f}"] + [f"{v:+,.0f}" for v in s_["shap_ngn"]] + [f"₦{pred:,.0f}"],
+        textposition="outside", connector=dict(line=dict(color=C["border"])),
+        increasing=dict(marker=dict(color=C["amber"])), decreasing=dict(marker=dict(color=C["green"])),
+        totals=dict(marker=dict(color=C["accent"])), hoverinfo="skip"))
+    fig.update_layout(template="plotly_dark", height=height, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(0,0,0,0)", showlegend=False, xaxis_title=f"Price ({unit})",
+                      margin=dict(t=10, b=10, l=10, r=100), yaxis=dict(automargin=True, autorange="reversed"))
+    fig.update_xaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
+    return fig, s_, base, pred
+
+
 # ===========================================================================
 # PAGES
 # ===========================================================================
@@ -438,6 +493,11 @@ if page == "Overview":
     with top_block():
         page_header("Overview · What is happening")
     kpi_row()
+    _age = (pd.Timestamp.today().year - latest_date.year) * 12 + (pd.Timestamp.today().month - latest_date.month)
+    if _age >= 2:
+        st.markdown(f"<div class='fs-note'>Latest observation: <b>{latest_date.strftime('%B %Y')}</b> "
+                    f"({_age} months ago). Forecasts start from that month; refresh the data to update them.</div>",
+                    unsafe_allow_html=True)
     overview_insight()
     section("Price history and 6-month forecast")
     st.plotly_chart(forecast_chart(height=400), width="stretch", config=PLOT_CFG)
@@ -509,6 +569,18 @@ elif page == "Drivers":
     fig2.update_xaxes(gridcolor=C["border"], range=[0, max(d.values) * 1.15])
     st.plotly_chart(fig2, width="stretch", config=PLOT_CFG)
 
+    if SHAP_LOCAL is not None and LGBM_NEXT is not None and selected in set(LGBM_NEXT["commodity"]):
+        section(f"What moves next month's estimate · {next_month.strftime('%B %Y')}")
+        wf, parts, base_v, pred_v = waterfall_chart()
+        top = parts.iloc[0]
+        st.plotly_chart(wf, width="stretch", config=PLOT_CFG)
+        insight(
+            f"LightGBM puts next month at <b>{naira(pred_v)}</b> versus ARIMA's headline "
+            f"<b>{naira(next_fc_price)}</b>. The biggest push comes from <b>{top['label']}</b> "
+            f"(<b>{top['shap_ngn']:+,.0f}</b>). <span style='color:{C['muted']}'>For interpretation only: ARIMA "
+            f"remains the forecast. Next month's drivers are unknown, so they are held at their last observed "
+            f"values.</span>")
+
     with st.expander("How to read this"):
         st.markdown(
             "- Bars show each factor's *relative* contribution to the model's predictions for this "
@@ -517,32 +589,65 @@ elif page == "Drivers":
             "trend — a real signal, not a data artefact.\n"
             "- Percentages come from SHAP values of the LightGBM model. Since ARIMA (no engineered "
             "features) is the most accurate forecaster here, treat this view as explaining what "
-            "*correlates with* price movements, not the mechanism behind the forecast shown."
+            "*correlates with* price movements, not the mechanism behind the forecast shown.\n"
+            "- Fuel price and CPI are trending, collinear series, so fuel's large share plausibly stands in "
+            "for the post-2023 price regime rather than a pure fuel effect."
         )
 
 elif page == "Price Status":
     with top_block():
         page_header("Price Status · Normal, watch or high")
-    left, right = st.columns(2)
-    with left:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         status_banner()
-    with right:
+    with c2:
+        st.markdown(
+            f"<div class='fs-card fs-kpi' style='background:{next_color}1f;border:1px solid {next_color}66;'>"
+            f"<div class='fs-label' style='color:{next_color}'>Next month (forecast)</div>"
+            f"<div class='fs-value' style='color:{next_color}'>{next_label}</div>"
+            f"<div class='fs-sub' style='color:{C['text']}'>{naira(next_fc_price)} · "
+            f"{next_month.strftime('%b %Y')}</div></div>", unsafe_allow_html=True)
+    with c3:
         gap_amber = (amber / latest_price - 1) * 100
         gap_red = (red / latest_price - 1) * 100
         st.markdown(kpi_card(
             "Distance to thresholds",
             f"{gap_amber:+.1f}% to Watch" if status == "normal" else
             (f"{gap_red:+.1f}% to High" if status == "watch" else "Above High"),
-            f"Watch at {naira(amber)} · High at {naira(red)}", fixed=True), unsafe_allow_html=True)
+            f"Watch {naira(amber)} · High {naira(red)}", fixed=True), unsafe_allow_html=True)
 
-    proj_txt = (f"Looking ahead, the forecast stays <b>{STATUS[peak_status][0].lower()}</b>-level through "
-                f"{end_fc['date'].strftime('%B %Y')}." if peak_status == status else
-                f"Looking ahead, the forecast reaches <b>{STATUS[peak_status][0].lower()}</b> levels "
-                f"({naira(fc['forecast'].max())}) within the next 6 months.")
-    insight(f"{label} is <b>{status_label.lower()}</b> today. {proj_txt}")
+    if next_status != status:
+        nxt = (f"Next month's forecast moves it to <b>{next_label.lower()}</b> ({naira(next_fc_price)}).")
+    else:
+        nxt = f"Next month's forecast keeps it <b>{next_label.lower()}</b> ({naira(next_fc_price)})."
+    proj_txt = (f"Over the next 6 months the forecast stays <b>{STATUS[peak_status][0].lower()}</b>-level."
+                if peak_status == status else
+                f"Over the next 6 months the forecast reaches <b>{STATUS[peak_status][0].lower()}</b> levels "
+                f"({naira(fc['forecast'].max())}).")
+    insight(f"{label} is <b>{status_label.lower()}</b> today. {nxt} {proj_txt}")
 
     section("Price against status thresholds")
     st.plotly_chart(forecast_chart(height=380, years=3, show_thresholds=True), width="stretch", config=PLOT_CFG)
+
+    if BACKTEST is not None and selected in set(BACKTEST["commodity"]):
+        bt = BACKTEST[BACKTEST["commodity"] == selected]
+        n_m, n_flag, n_red = len(bt), int((bt["status"] != "GREEN").sum()), int((bt["status"] == "RED").sum())
+        section(f"Back-test · {bt['date'].min().strftime('%b %Y')} to {bt['date'].max().strftime('%b %Y')}")
+        st.plotly_chart(backtest_chart(), width="stretch", config=PLOT_CFG)
+        insight(
+            f"Applied month by month, the rolling alert was <b>Watch or High in {n_flag} of {n_m} months</b> "
+            f"({n_red} High) for {label}. <span style='color:{C['muted']}'>Prices were rising through this "
+            f"period, so they often sat above the previous 24 months' range. Read the status as "
+            f"\"high relative to the last two years\", not as an early-warning signal.</span>")
+        with st.expander("Back-test summary for all commodities"):
+            allb = BACKTEST.assign(flag=BACKTEST["status"] != "GREEN")
+            summ = allb.groupby("commodity").agg(Months=("flag", "size"), Flagged=("flag", "sum"),
+                                                 High=("status", lambda x: int((x == "RED").sum())))
+            surge = allb[(allb["date"] >= "2023-06-01") & (allb["date"] <= "2023-12-01")] \
+                .groupby("commodity")["flag"].sum().rename("Flagged Jun–Dec 2023")
+            summ = summ.join(surge)
+            summ.index = [COMMODITY_LABELS.get(c, c) for c in summ.index]
+            st.dataframe(summ, width="stretch")
 
     with st.expander("How thresholds work"):
         st.markdown(
@@ -563,7 +668,8 @@ elif page == "Methodology":
     st.markdown(
         "Three models are compared under walk-forward validation for each commodity: **ARIMA** "
         "(univariate baseline), **ARIMAX** (multivariate extension) and **LightGBM** (gradient-boosted "
-        "ML benchmark). Forecasts use each commodity's best model by walk-forward MAPE."
+        "ML benchmark), plus a naive last-value benchmark for reference. Forecasts use each commodity's "
+        "best of the three models by walk-forward MAPE."
     )
     c1, c2, c3 = st.columns(3)
     c1.markdown(kpi_card("Selected model", best_model, "Lowest walk-forward MAPE", small=True),
@@ -573,50 +679,73 @@ elif page == "Methodology":
     c3.markdown(kpi_card("ARIMA order", str(fc["arima_order"].iloc[0]),
                          "(p, d, q) fitted on full series", small=True), unsafe_allow_html=True)
 
-    avail = {k: v for k, v in EXTRA_METRICS.items() if selected in v.index and best_model in v.columns}
-    if avail:
+    comp = None
+    if COMPARISON is not None and selected in set(COMPARISON["commodity"]):
+        comp = COMPARISON[COMPARISON["commodity"] == selected].set_index("model")
+    if comp is not None and best_model in comp.index:
         st.markdown("<div style='height:1.6rem'></div>", unsafe_allow_html=True)
-        cols = st.columns(len(avail))
-        blurbs = {"MAE": "Typical miss, in naira (walk-forward)",
-                  "RMSE": "Like MAE, but penalises large misses more"}
-        for col, (name, df) in zip(cols, avail.items()):
-            col.markdown(kpi_card(name, naira(float(df.loc[selected, best_model]), 2),
-                                  f"{blurbs[name]} · {unit}", small=True), unsafe_allow_html=True)
+        k1, k2, k3 = st.columns(3)
+        k1.markdown(kpi_card("MAE", naira(float(comp.loc[best_model, "MAE"]), 2),
+                             f"Typical miss, in naira · {unit}", small=True), unsafe_allow_html=True)
+        k2.markdown(kpi_card("RMSE", naira(float(comp.loc[best_model, "RMSE"]), 2),
+                             "Like MAE, but penalises large misses more", small=True), unsafe_allow_html=True)
+        if "Naive" in comp.index:
+            nv = float(comp.loc["Naive", "MAPE"]); dlt = nv - best_mape
+            sub = ("Ties with the last-value forecast" if abs(dlt) < 0.005 else
+                   f"{best_model} beats it by {dlt:.2f} pts" if dlt > 0 else f"{best_model} trails it by {-dlt:.2f} pts")
+            k3.markdown(kpi_card("Naive benchmark", f"{nv:.2f}%", sub, small=True), unsafe_allow_html=True)
 
     section("Model comparison (walk-forward, lower is better)")
-    models = ["ARIMA", "ARIMAX", "LightGBM"]
-    tables = {"MAPE": (mape_summary.loc[[selected], models], "{:.2f}%")}
-    for name, df in EXTRA_METRICS.items():
-        if selected in df.index and all(m in df.columns for m in models):
-            tables[name] = (df.loc[[selected], models], "₦{:,.2f}")
-    if len(tables) == 1:
-        row, fmt = tables["MAPE"]
-        st.dataframe(row.style.format(fmt), width="stretch")
-    else:
-        for tab, (name, (row, fmt)) in zip(st.tabs(list(tables)), tables.items()):
+    models3, models4 = ["ARIMA", "ARIMAX", "LightGBM"], ["ARIMA", "ARIMAX", "LightGBM", "Naive"]
+    if comp is not None and all(m in comp.index for m in models4):
+        metric_fmt = {"MAPE": "{:.2f}%", "MAE": "₦{:,.2f}"}
+        if "MSE" in comp.columns: metric_fmt["MSE"] = "{:,.0f}"
+        metric_fmt["RMSE"] = "₦{:,.2f}"
+        tabs = st.tabs(list(metric_fmt))
+        for tab, (met, fmt) in zip(tabs, metric_fmt.items()):
             with tab:
-                st.dataframe(row.style.format(fmt), width="stretch")
-    st.caption(
-        "ARIMA is the best-performing model for every commodity in this study — external variables "
-        "did not improve on the univariate baseline at this sample size and monthly resolution, a "
-        "genuine finding under walk-forward evaluation rather than a modelling shortfall."
-    )
-    with st.expander("What is MAPE?"):
-        st.markdown("Mean Absolute Percentage Error: on average, how far the forecast landed from the "
-                    "actual price, as a percentage of the actual price. Walk-forward means each "
-                    "forecast used only data available at the time.")
+                row = comp.loc[models4, [met]].T
+                row.index = [label]
+                st.dataframe(row.style.format(fmt).highlight_min(axis=1, subset=models3, color="#1c3d2e"),
+                             width="stretch")
+                if met == "MSE": st.caption("MSE is in squared naira (₦²), so it grows quickly with large misses.")
+    else:
+        st.dataframe(mape_summary.loc[[selected], models3].style.format("{:.2f}%"), width="stretch")
 
-    if avail:
-        with st.expander("What are MAE and RMSE?"):
-            st.markdown(
-                "- **MAE** (Mean Absolute Error): the average size of the forecast miss, in naira. "
-                "Easy to read; every miss counts equally.\n"
-                "- **RMSE** (Root Mean Squared Error): also in naira, but squares each miss first, "
-                "so a few large misses push it up more. If RMSE is much higher than MAE, the model "
-                "occasionally misses badly.\n"
-                "- MAPE expresses the error as a percentage, which makes commodities with different "
-                "price levels comparable; MAE and RMSE show the size in naira."
-            )
+    if COMPARISON is not None:
+        piv = COMPARISON.pivot(index="commodity", columns="model", values="MAPE")
+        n_beat, n_tie = int((piv["ARIMA"] < piv["Naive"] - 0.005).sum()), int(((piv["ARIMA"] - piv["Naive"]).abs() <= 0.005).sum())
+        naive_txt = (f" It also beats the naive last-value benchmark on {n_beat} of {len(piv)} commodities"
+                     + (f" and ties on {n_tie}" if n_tie else "") + ".")
+    else:
+        naive_txt = ""
+    st.caption(
+        "ARIMA is the best-performing of the three models for every commodity in this study — external "
+        "variables did not improve on the univariate baseline at this sample size and monthly resolution, a "
+        "genuine finding under walk-forward evaluation rather than a modelling shortfall." + naive_txt
+    )
+
+    if SUBPERIOD is not None and selected in set(SUBPERIOD["commodity"]):
+        section("Accuracy before vs after the subsidy removal (MAPE)")
+        sp = SUBPERIOD[SUBPERIOD["commodity"] == selected].copy()
+        pre_n = int(sp[sp["period"].str.startswith("pre")]["n"].iloc[0]); post_n = int(sp[sp["period"].str.startswith("post")]["n"].iloc[0])
+        sp["window"] = sp["period"].str.startswith("pre").map({True: f"Before (Jan–Apr 2023, n={pre_n})",
+                                                               False: f"After (May 2023+, n={post_n})"})
+        pv = sp.pivot(index="model", columns="window", values="MAPE").loc[[m for m in models4 if m in set(sp["model"])]]
+        pv = pv[sorted(pv.columns, key=lambda x: not x.startswith("Before"))]
+        st.dataframe(pv.style.format("{:.2f}%"), width="stretch")
+        st.caption(f"The 'before' window has only {pre_n} test months, so those figures are indicative, not conclusive.")
+
+    with st.expander("What are MAPE, MAE, MSE and RMSE?"):
+        st.markdown(
+            "- **MAPE** (Mean Absolute Percentage Error): the average miss as a percentage of the actual price, "
+            "so commodities with different price levels can be compared.\n"
+            "- **MAE** (Mean Absolute Error): the average size of the miss in naira; every miss counts equally.\n"
+            "- **MSE** (Mean Squared Error): the average of the squared misses, in squared naira.\n"
+            "- **RMSE** (Root Mean Squared Error): the square root of MSE, back in naira. A few large misses "
+            "push it up more than MAE; if RMSE is much higher than MAE the model occasionally misses badly.\n"
+            "- *Walk-forward* means each forecast used only data available at the time."
+        )
 
     section("Structural break · May 2023 subsidy removal")
     if selected in break_summary.index:
