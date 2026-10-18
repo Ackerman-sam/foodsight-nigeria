@@ -390,7 +390,7 @@ def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False
         showlegend=False,
         margin=dict(t=40, b=10, l=10, r=10),
     )
-    fig.update_xaxes(tickformat="%b %Y", showgrid=False)
+    fig.update_xaxes(tickformat="%b %Y", showgrid=False, showspikes=False)
     fig.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
     return fig
 
@@ -460,7 +460,7 @@ def backtest_chart(height=340):
                       yaxis_title=f"Price ({unit})", xaxis_title=None,
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                       margin=dict(t=40, b=10, l=10, r=10))
-    fig.update_xaxes(tickformat="%b %Y", showgrid=False)
+    fig.update_xaxes(tickformat="%b %Y", showgrid=False, showspikes=False)
     fig.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
     return fig
 
@@ -710,7 +710,9 @@ elif page == "Methodology":
                              width="stretch")
                 if met == "MSE": st.caption("MSE is in squared naira (₦²), so it grows quickly with large misses.")
     else:
-        st.dataframe(mape_summary.loc[[selected], models3].style.format("{:.2f}%"), width="stretch")
+        _row = mape_summary.loc[[selected], models3].copy()
+        _row.index = [label]
+        st.dataframe(_row.style.format("{:.2f}%"), width="stretch")
 
     if COMPARISON is not None:
         piv = COMPARISON.pivot(index="commodity", columns="model", values="MAPE")
@@ -780,7 +782,7 @@ elif page == "Methodology":
                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            yaxis_title=f"Price ({unit})", xaxis_title=None,
                            margin=dict(t=30, b=10, l=10, r=10))
-        figb.update_xaxes(tickformat="%Y", showgrid=False)
+        figb.update_xaxes(tickformat="%Y", showgrid=False, showspikes=False)
         figb.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
         st.plotly_chart(figb, width="stretch", config=PLOT_CFG)
 
