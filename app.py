@@ -478,11 +478,13 @@ def waterfall_chart(height=380):
         text=[f"₦{base:,.0f}"] + [f"{v:+,.0f}" for v in s_["shap_ngn"]] + [f"₦{pred:,.0f}"],
         textposition="outside", connector=dict(line=dict(color=C["border"])),
         increasing=dict(marker=dict(color=C["amber"])), decreasing=dict(marker=dict(color=C["green"])),
-        totals=dict(marker=dict(color=C["accent"])), hoverinfo="skip"))
+        totals=dict(marker=dict(color=C["accent"])), hoverinfo="skip", cliponaxis=False))
     fig.update_layout(template="plotly_dark", height=height, paper_bgcolor="rgba(0,0,0,0)",
                       plot_bgcolor="rgba(0,0,0,0)", showlegend=False, xaxis_title=f"Price ({unit})",
                       margin=dict(t=10, b=10, l=10, r=100), yaxis=dict(automargin=True, autorange="reversed"))
-    fig.update_xaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
+    cum = base + s_["shap_ngn"].cumsum()                   # running total after each driver
+    fig.update_xaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",",
+                     range=[min(0.0, float(cum.min())), max(float(cum.max()), pred, base) * 1.15])  # room for end labels
     return fig, s_, base, pred
 
 
