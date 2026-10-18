@@ -153,8 +153,18 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+CORE_FILES = ["FoodSight_national_merged.csv", "future_forecasts_6mo.csv", "all_commodities_mape_summary.csv",
+              "all_commodities_shap_pct.csv", "alert_thresholds.csv", "structural_break_summary.csv"]
+
+
+def _data_signature():
+    """Modified-times of the core CSVs. Part of the cache key, so replacing a file refreshes the app
+    even when the server process keeps running (a plain @st.cache_data would keep serving old data)."""
+    return tuple((DATA_DIR / f).stat().st_mtime if (DATA_DIR / f).exists() else 0 for f in CORE_FILES)
+
+
 @st.cache_data
-def load_data():
+def _load_data(signature):
     merged = pd.read_csv(DATA_DIR / "FoodSight_national_merged.csv", parse_dates=["date"])
     forecasts = pd.read_csv(DATA_DIR / "future_forecasts_6mo.csv", parse_dates=["date"])
     mape_summary = pd.read_csv(DATA_DIR / "all_commodities_mape_summary.csv", index_col=0)
@@ -162,6 +172,10 @@ def load_data():
     thresholds = pd.read_csv(DATA_DIR / "alert_thresholds.csv", index_col=0)
     break_summary = pd.read_csv(DATA_DIR / "structural_break_summary.csv", index_col=0)
     return merged, forecasts, mape_summary, shap_pct, thresholds, break_summary
+
+
+def load_data():
+    return _load_data(_data_signature())
 
 
 @st.cache_data
@@ -834,6 +848,18 @@ elif page == "Methodology":
     section("Data sources")
     st.write("NBS (food prices, CPI, fuel), CHIRPS (rainfall), Investing.com (exchange rate). "
              "National level, monthly, Jan 2016 – " + latest_date.strftime("%b %Y") + ".")
+
+    with st.expander("Data files in use"):
+        _opt = ["all_commodities_model_comparison.csv", "all_commodities_subperiod_metrics.csv",
+                "alert_backtest.csv", "shap_local_next_month.csv", "lgbm_next_month.csv"]
+        _rows = []
+        for _f in CORE_FILES + _opt:
+            _p = DATA_DIR / _f
+            _rows.append({"File": _f, "Status": "found" if _p.exists() else "missing",
+                          "Last modified": pd.Timestamp(_p.stat().st_mtime, unit="s").strftime("%d %b %Y %H:%M")
+                          if _p.exists() else "—"})
+        st.dataframe(pd.DataFrame(_rows).set_index("File"), width="stretch")
+        st.caption("A file marked missing simply hides its section until the CSV is added to data/.")
 
 st.markdown(
     "<div class='fs-footer'>FoodSight Nigeria — MSc Information Technology project, University of Ilorin. "
