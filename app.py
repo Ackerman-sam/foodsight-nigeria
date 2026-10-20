@@ -343,8 +343,11 @@ def kpi_row():
 
 
 def range_note():
-    st.caption("Shaded band = 80% range", help="The model expects the actual price to land inside the "
-               "band about 8 times out of 10. Everything right of the dotted line is a forecast.")
+    st.caption(f"Shaded band = 80% range. Based on data to {latest_date.strftime('%B %Y')}; accuracy was "
+               "validated one month ahead only, so the six-month path and range are indicative.",
+               help="The band is built so that the actual price should land inside it about 8 times out "
+                    "of 10, but this was not tested beyond one month ahead, so treat the later months "
+                    "with more caution. Everything right of the dotted line is a forecast.")
 
 
 def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False):
