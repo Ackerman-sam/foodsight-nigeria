@@ -150,6 +150,49 @@ st.markdown(
 )
 
 
+# Responsive layout. Streamlit already stacks columns below ~640px; these rules tidy what is left:
+# a header that no longer eats a quarter of a phone screen, a 2 x 2 KPI grid, tighter padding and text.
+st.markdown(
+    f"""
+<style>
+  /* Tablets and narrow windows: KPI cards in a 2 x 2 grid so values never overflow */
+  @media (max-width: 900px) {{
+    .st-key-kpi_row [data-testid="stHorizontalBlock"] {{ flex-wrap:wrap !important; gap:.6rem !important; }}
+    .st-key-kpi_row [data-testid="stColumn"], .st-key-kpi_row [data-testid="column"] {{
+        flex:1 1 calc(50% - .3rem) !important; width:calc(50% - .3rem) !important;
+        min-width:calc(50% - .3rem) !important; }}
+    .fs-kpi {{ height:auto !important; min-height:6.2rem; }}
+    .fs-kpi .fs-sub {{ white-space:normal !important; overflow:visible !important; }}
+  }}
+  /* Phones */
+  @media (max-width: 640px) {{
+    .block-container {{ padding-left:.9rem !important; padding-right:.9rem !important; }}
+    /* Header scrolls away instead of staying pinned (a pinned header takes ~25% of a phone screen) */
+    div:has(> .st-key-sticky_top) {{ position:static !important; margin-bottom:.2rem; }}
+    .st-key-sticky_top {{ padding:2.25rem 0 .3rem 0 !important; margin-bottom:.2rem !important; }}
+    .fs-title {{ font-size:1.35rem; margin:.05rem 0 .4rem 0; }}
+    .fs-eyebrow {{ font-size:.78rem; }}
+    .fs-kpi {{ padding:.6rem .75rem; min-height:5.8rem; }}
+    .fs-kpi .fs-value, .fs-kpi .fs-value.sm {{ font-size:1.25rem; }}
+    .fs-label {{ font-size:.68rem; letter-spacing:.04em; }}
+    .fs-sub {{ font-size:.74rem; }}
+    .fs-card {{ padding:.8rem .9rem; }}
+    .fs-insight, .fs-note {{ font-size:.86rem; padding:.6rem .75rem; }}
+    .fs-section {{ margin:1rem 0 .3rem 0; font-size:1rem; }}
+    .fs-status-banner {{ padding:.9rem 1rem; }}
+    .fs-footer {{ margin-top:1.5rem; }}
+    /* Sidebar: let it use most of a phone's width when opened */
+    section[data-testid="stSidebar"][aria-expanded="true"] {{ width:min(16.5rem, 85vw) !important;
+        min-width:0 !important; max-width:85vw !important; }}
+    /* Wide tables scroll sideways inside their own box instead of widening the page */
+    [data-testid="stDataFrame"], [data-testid="stTable"] {{ max-width:100%; overflow-x:auto; }}
+  }}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
@@ -330,6 +373,11 @@ def page_header(eyebrow):
 
 
 def kpi_row():
+    with st.container(key="kpi_row"):
+        _kpi_row_cards()
+
+
+def _kpi_row_cards():
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(kpi_card("Current price", naira(latest_price, 2),
                          f"{unit} · {latest_date.strftime('%B %Y')}", fixed=True), unsafe_allow_html=True)
@@ -408,7 +456,7 @@ def forecast_chart(height=420, years=5, show_events=False, show_thresholds=False
         margin=dict(t=40, b=10, l=10, r=10),
     )
     fig.update_xaxes(tickformat="%b %Y", showgrid=False, showspikes=False)
-    fig.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",")
+    fig.update_yaxes(gridcolor=C["border"], tickprefix="₦", tickformat=",", automargin=True)
     return fig
 
 
